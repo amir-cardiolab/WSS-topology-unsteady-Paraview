@@ -122,11 +122,6 @@ def main():
         close(name, arr(surf, name), ref["data"]["metrics"][name][0], 1e-12)
     for name in ("WSSdiv_TA", "NormWSSdiv_TA", "TSVI", "TSVI_valid"):
         close(name, arr(surf, name, cell=True), ref["data"]["metrics"][name][0], 1e-12)
-    tsvi = arr(surf, "TSVI", cell=True).copy()
-    f.MeshLengthUnit = 0.001                       # mesh in mm: divergences and TSVI per metre
-    f.UpdatePipeline()
-    surf = fetch(f, 0)
-    close("TSVI per metre (x 1000)", arr(surf, "TSVI", cell=True), 1000.0 * tsvi, 1e-9)
 
     # ---- 3. fixed points tracked in time --------------------------------------------------
     print("\n=== fixed points in time (flag 8) ===")

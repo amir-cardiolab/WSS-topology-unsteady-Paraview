@@ -198,7 +198,6 @@ PROPERTIES_XML = "\n".join([
     _double("ManifoldMaxLength", "Manifold Max Length", "SetManifoldMaxLength", 0.0, "Maximum length of a manifold branch (0: 25 times the bounding radius).", "12"),
     _double("ManifoldPerturbation", "Manifold Perturbation", "SetManifoldPerturbation", 0.1, "Distance from the saddle at which the manifold integration starts, relative to sqrt(area).", "12"),
     _double("CaptureRadius", "Capture Radius", "SetCaptureRadius", 0.5, "A manifold stops when it comes this close (relative to sqrt(area)) to another fixed point.", "12"),
-    _double("MeshLengthUnit", "Mesh Length Unit", "SetMeshLengthUnit", 1.0, "Size of one mesh length unit in metres: 1 reports the divergences and TSVI per mesh unit, 0.001 (mesh in mm) per metre.", "13"),
     _int("MaxCrossings", "Max Crossings", "SetMaxCrossings", 50, "Maximum number of triangle crossings of a tracer within one time step.", advanced=True),
     """<StringVectorProperty name="OutputDirectory" label="Output Directory" command="SetOutputDirectory" number_of_elements="1" default_values="" panel_visibility="advanced">
   <FileListDomain name="files" />
@@ -206,7 +205,7 @@ PROPERTIES_XML = "\n".join([
   <Documentation>Optional: also write the result files of the command-line program (RT, ET, tracer snapshots + .pvd, fixed points, manifolds, SingET, WSSmetrics, ...) into this folder.</Documentation>
 </StringVectorProperty>""",
     _prop("StringVectorProperty", "OutputPrefix", "Output Prefix", "SetOutputPrefix", "wsslcs", "Prefix of the files written to the output directory.", advanced=True),
-    """<PropertyGroup label="Data"><Property name="WSSVectors" /><Property name="WSSScale" /><Property name="UseAllTimeSteps" /><Property name="TimeBetweenFrames" /><Property name="ReleaseFrame" /><Property name="MeshLengthUnit" /></PropertyGroup>
+    """<PropertyGroup label="Data"><Property name="WSSVectors" /><Property name="WSSScale" /><Property name="UseAllTimeSteps" /><Property name="TimeBetweenFrames" /><Property name="ReleaseFrame" /></PropertyGroup>
 <PropertyGroup label="Integration"><Property name="TimeStep" /><Property name="IntegrationTime" /><Property name="Direction" /><Property name="Integrator" /><Property name="NumberOfSnapshots" /><Property name="ReleaseAtCentroids" /><Property name="TrajectoryLines" /><Property name="NumberOfReleases" /><Property name="TimeBetweenReleases" /><Property name="DiffusionCoefficient" /><Property name="MaxWallNormalDistance" /><Property name="Viscosity" /><Property name="RandomSeed" /><Property name="ReleasePoint" /><Property name="ReleaseVertex" /><Property name="MaxCrossings" /></PropertyGroup>
 <PropertyGroup label="Fixed points and manifolds"><Property name="IgnoreBoundaryTriangles" /><Property name="ZeroTolerance" /><Property name="ManifoldStep" /><Property name="ManifoldMaxSteps" /><Property name="ManifoldMaxLength" /><Property name="ManifoldPerturbation" /><Property name="CaptureRadius" /></PropertyGroup>
 <PropertyGroup label="Files"><Property name="OutputDirectory" /><Property name="OutputPrefix" /></PropertyGroup>""",
@@ -251,7 +250,6 @@ class WSSLCSSurfaceTransport(VTKPythonAlgorithmBase):
         self._m_pert = 0.1
         self._capture = 0.5
         self._max_cross = 50
-        self._length_unit = 1.0
         self._outdir = ""
         self._prefix = "wsslcs"
         # pipeline state
@@ -294,7 +292,6 @@ class WSSLCSSurfaceTransport(VTKPythonAlgorithmBase):
     def SetManifoldPerturbation(self, v): self._set("_m_pert", float(v))
     def SetCaptureRadius(self, v): self._set("_capture", float(v))
     def SetMaxCrossings(self, v): self._set("_max_cross", int(v))
-    def SetMeshLengthUnit(self, v): self._set("_length_unit", float(v))
     def SetOutputDirectory(self, v): self._set("_outdir", str(v or ""))
     def SetOutputPrefix(self, v): self._set("_prefix", str(v or "wsslcs"))
 
@@ -353,7 +350,7 @@ class WSSLCSSurfaceTransport(VTKPythonAlgorithmBase):
                 self._integrator, self._nout, self._highres, self._lines, self._num_stag, self._stag_delta, self._diff,
                 self._max_yn, self._mu, self._seed, tuple(self._pt), self._vertex, self._exclude_boundary, self._zero_tol,
                 self._m_step, self._m_max_steps, self._m_max_length, self._m_pert, self._capture, self._max_cross,
-                self._length_unit, self._outdir, self._prefix)
+                self._outdir, self._prefix)
 
     def _parameters(self, steady, n_frames, dt):
         p = Parameters(infile="paraview-input", vector_array=self._array_name or "wss", output_prefix=self._prefix,
@@ -370,7 +367,7 @@ class WSSLCSSurfaceTransport(VTKPythonAlgorithmBase):
                        manifold_step_fraction=self._m_step, manifold_max_steps=self._m_max_steps,
                        manifold_max_length=self._m_max_length, manifold_perturbation=self._m_pert,
                        fixed_point_capture_radius=self._capture, write_trajectory_lines=self._lines,
-                       max_crossings_per_step=self._max_cross, mesh_length_unit=self._length_unit, verbose=0)
+                       max_crossings_per_step=self._max_cross, verbose=0)
         p.validate()
         return p
 

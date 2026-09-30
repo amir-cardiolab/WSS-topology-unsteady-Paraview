@@ -108,7 +108,7 @@ SaveData("tracers.pvd", proxy=OutputPort(f, 3), WriteTimeSteps=1)  # snapshots
 | Tagged tracers (10) | + the *Seeds* input |
 | Single tracer (3, 4) | *Release Point* (snapped to the surface) or *Release Vertex Index* |
 | Fixed points tracked in time (8) | *Time Step*, *Integration Time*, *Number Of Snapshots*, fixed point options |
-| Time-series metrics (13) | *Mesh Length Unit* (size of one mesh unit in metres: 1 reports the divergences and TSVI per mesh unit, 0.001 for a mesh in mm gives 1/m), *Zero Tolerance* |
+| Time-series metrics (13) | *Zero Tolerance* (a WSS below it counts as zero for the normalized field) |
 
 *Max Triangle Crossings Per Step* (advanced) limits the number of triangles
 a tracer may cross within one time step.
@@ -138,9 +138,25 @@ the divergence of the normalized WSS vector field, and
 `DIV_W` from its cycle average (Mazzi et al. 2020). The discrete surface
 divergence is first-order accurate (checked against the analytic divergence
 of unit fields on a sphere); the divergences and TSVI are per mesh length
-unit, or per metre with *Mesh Length Unit*; triangles touching a vertex with a
+unit (multiply by 1000 for a mesh in mm to obtain the 1/m of the literature); triangles touching a vertex with a
 zero WSS (caps), where the normalized vector is undefined, are flagged in
 `TSVI_valid` and set to 0.
+**Nodal versus per-triangle TSVI, and the ParaView pipeline.** `TSVI`
+(cells) is the RMS deviation computed in every triangle.  The nodal
+`TSVI_point` is computed *node-first*: `DIV_W` is averaged to the nodes at
+every frame (plain average of the triangles around the node, as VTK's
+Gradient filter does) and the RMS deviation over the cycle is taken of the
+nodal values.  This is exactly what the ParaView pipeline *Calculator
+`norm(WSS)` → Gradient → Calculator `Gradient_0+Gradient_4+Gradient_8` →
+Temporal Statistics (stddev)* computes: on the synthetic sequence the two
+agree to 0.2 % (correlation 1.0000; Temporal Statistics' stddev is the
+population RMS, i.e. the `(1/T)∫` of the definition).  Averaging the
+per-triangle RMS values to the nodes instead gives larger values (an average
+of RMS values exceeds the RMS of the averages), about 5 % on average and more
+near the fixed points; the per-triangle `TSVI` is the sharpest of the three.
+
+`examples/compare_with_paraview_pipeline.py` (run with `pvpython`) builds that
+pipeline next to the filter and prints the comparison.
 
 ## Files
 

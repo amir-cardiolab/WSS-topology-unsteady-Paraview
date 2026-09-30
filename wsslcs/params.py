@@ -96,7 +96,6 @@ class Parameters:
     mu: float = 0.04                     # dynamic viscosity (g/cm/s), used by flag_code 6, 7, 9
     exclude_boundary_fixed_points: int = 1
     zero_vector_tolerance: float = 1.0e-10
-    mesh_length_unit: float = 1.0        # size of one mesh length unit in metres (flag 13: divergences per metre)
     manifold_step_fraction: float = 0.2      # arc-length step / sqrt(local triangle area)
     manifold_max_steps: int = 20000
     manifold_max_length: float = 0.0         # 0 -> automatic (25 x bounding radius)
@@ -156,8 +155,6 @@ class Parameters:
             raise ValueError("'infile' must be given in the parameter file")
         if self.time_step <= 0:
             raise ValueError("time_step must be positive")
-        if self.mesh_length_unit <= 0:
-            raise ValueError("mesh_length_unit must be positive")
         if self.output_format.lower().lstrip(".") not in ("vtp", "vtk"):
             raise ValueError("output_format must be 'vtp' or 'vtk'")
         self.output_format = self.output_format.lower().lstrip(".")
@@ -352,9 +349,6 @@ integrator = euler
 # fixed point / manifold settings (flag_code 8, 11, 12)
 exclude_boundary_fixed_points = 1
 zero_vector_tolerance = 1e-10
-# flag 13: size of one mesh length unit in metres (0.001 for a mesh in mm); the
-# divergences and TSVI are then reported per metre (1: per mesh length unit)
-mesh_length_unit = 1.0
 manifold_step_fraction = 0.2
 manifold_max_steps = 20000
 manifold_max_length = 0
