@@ -14,6 +14,12 @@ unsteady (a file series = the frames of one cardiac cycle):
 * the **time-series metrics** TAWSS, OSI, RRT, time-averaged WSS divergence
   and TSVI.
 
+![Staggered tracer release and surface transport](docs/WSS_surfacetracer_staggered.gif)
+
+*Staggered tracer release and surface transport: surface tracers (white
+points) released in several batches and advected by the WSS field; the surface
+is coloured by the WSS exposure time (analysis 5, staggered release).*
+
 The plugin adds one filter, **WSS Surface Transport** (menu *Filters › WSSLCS*),
 with four outputs: the surface with the result arrays, the fixed points, the
 lines (manifolds, tracer paths, single trajectory) and a time dependent
@@ -166,6 +172,7 @@ pipeline next to the filter and prints the comparison.
 | `wsslcs/` | the analysis package (mesh, field transport, tracers, exposure time, fixed points, manifolds, metrics, VTK I/O) |
 | `examples/data/` | a synthetic 8-frame WSS sequence on a carotid artery patch (period 0.8), a tagged seed file and the steady TAWSS of the patch |
 | `examples/pvpython_example.py` | batch example |
+| `docs/WSS_surfacetracer_staggered.gif` | animation of a staggered tracer release |
 | `tests/test_plugin.py` | end-to-end test (`pvpython tests/test_plugin.py`): every analysis through the ParaView pipeline against the command-line program |
 
 The synthetic sequence is made from the patch by modulating the WSS
