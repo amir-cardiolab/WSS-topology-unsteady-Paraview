@@ -32,7 +32,8 @@ paraview.org include Python and numpy; tested with ParaView 5.11.1 on macOS).
    each other.
 2. In ParaView: *Tools › Manage Plugins › Load New…*, select
    `WSSLCSPlugin.py`. Tick *Auto Load* to load it at every start.
-3. With a remote `pvserver`, load the plugin on the server (the files must
+3. After you load your WSS time series right click on the file, select add filter, and select WSSLCS --> WSS surface transport filter. Under analysis, you can select the option you are interested in (currently, not all tested but the main unsteady features WSS exposure time and surface tracers should work.
+4. With a remote `pvserver`, load the plugin on the server (the files must
    be on the server machine) and on the client.
 
 Batch use (`pvpython`, `pvbatch`):
