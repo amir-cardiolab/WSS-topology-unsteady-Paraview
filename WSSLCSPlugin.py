@@ -12,7 +12,8 @@ period):
   * WSS fixed points and their stable / unstable manifolds (WSS LCS), of the current
     time step or of the time averaged field;
   * fixed points tracked in time and their exposure time;
-  * time-series WSS metrics: TAWSS, OSI, RRT, time-averaged WSS divergence, TSVI.
+  * time-series WSS metrics: TAWSS, OSI, RRT, time-averaged WSS divergence, time-averaged
+    divergence of the normalized WSS, TSVI.
 
 Outputs (four ports): 0 "Surface" (the input surface with the result arrays),
 1 "Fixed points", 2 "Lines" (manifolds, tracer paths, single trajectory) and
@@ -25,6 +26,7 @@ pvserver).  Batch use:  pvpython -c "from paraview.simple import *; LoadPlugin(.
 """
 import hashlib
 import os
+import re
 import sys
 
 import numpy as np
@@ -63,7 +65,7 @@ MODES = [
     (9, "Flux from the wall with diffusion"),
     (10, "Tagged tracers (seeds from the Seeds input)"),
     (8, "Fixed points tracked in time (unsteady data)"),
-    (13, "Time-series WSS metrics: TAWSS, OSI, RRT, WSS divergence, TSVI (unsteady data)"),
+    (13, "Time-series WSS metrics: TAWSS, OSI, RRT, WSS divergence, normalized WSS divergence, TSVI (unsteady data)"),
 ]
 
 
@@ -108,8 +110,11 @@ def _vis(values):
 
 def _prop(kind, name, label, command, default, doc, extra="", nelem=1, advanced=False):
     pv = ' panel_visibility="advanced"' if advanced else ""
-    return (f'<{kind} name="{name}" command="{command}" number_of_elements="{nelem}" '
-            f'default_values="{default}"{pv}>\n  <Documentation>{label}. {doc}</Documentation>\n  {extra}\n</{kind}>')
+    # ParaView derives the Python attribute name of a property from its label (non
+    # alphanumeric characters removed), so every label must reduce to the XML name
+    assert re.sub(r"[^A-Za-z0-9]", "", label) == name, (name, label)
+    return (f'<{kind} name="{name}" label="{label}" command="{command}" number_of_elements="{nelem}" '
+            f'default_values="{default}"{pv}>\n  <Documentation>{doc}</Documentation>\n  {extra}\n</{kind}>')
 
 
 def _int(name, label, command, default, doc, values=None, advanced=False):
@@ -159,48 +164,49 @@ INPUTS_XML = """
 
 PROPERTIES_XML = "\n".join([
     _enum("Analysis", "Analysis", "SetAnalysis", 12, "Which analysis to run (the flag_code of the WSSLCS program).", MODES),
-    """<StringVectorProperty name="SelectInputVectors" command="SetInputArrayToProcess" number_of_elements="5" element_types="0 0 0 0 2" animateable="0">
+    """<StringVectorProperty name="WSSVectors" label="WSS Vectors" command="SetInputArrayToProcess" number_of_elements="5" element_types="0 0 0 0 2" animateable="0">
   <ArrayListDomain name="array_list" attribute_type="Vectors" input_domain_name="inputs_array">
     <RequiredProperties><Property function="Input" name="Input" /></RequiredProperties>
   </ArrayListDomain>
   <Documentation>The point vector array with the WSS.</Documentation>
 </StringVectorProperty>""",
-    _double("WSSScale", "WSS scale", "SetWSSScale", 0.03, "Tracer velocity = WSS scale x WSS (delta_n / mu: the near-wall velocity at the distance delta_n from the wall). Default 0.03."),
-    _bool("UseAllTimeSteps", "Use all time steps (periodic sequence)", "SetUseAllTimeSteps", 1,
+    _double("WSSScale", "WSS Scale", "SetWSSScale", 0.03, "Tracer velocity = WSS scale x WSS (delta_n / mu: the near-wall velocity at the distance delta_n from the wall). Default 0.03."),
+    _bool("UseAllTimeSteps", "Use All Time Steps", "SetUseAllTimeSteps", 1,
           "On: all time steps of the input are the frames of one period; they are fetched through the pipeline and the integration continues periodically beyond the last frame. Off: only the current time step is used (steady analysis)."),
-    _double("TimeBetweenFrames", "Time between frames (0 = from the data)", "SetTimeBetweenFrames", 0.0,
-            "Physical time between consecutive frames of the sequence. 0 uses the time values of the input (file series without time information count 0, 1, 2, ...)."),
-    _int("ReleaseFrame", "Release at frame (index)", "SetReleaseFrame", 0, "Index of the frame at which the integration starts (0 = first time step)."),
-    _double("TimeStep", "Time step", "SetTimeStep", 0.01, "Integration time step (time units of the data).", TIMED),
-    _double("IntegrationTime", "Integration time", "SetIntegrationTime", 1.0, "Total integration time; longer than the period of the sequence wraps around (periodic flow).", TIMED),
+    _double("TimeBetweenFrames", "Time Between Frames", "SetTimeBetweenFrames", 0.0,
+            "Physical time between consecutive frames of the sequence. 0 uses the time values of the input (a file series without time information counts 0, 1, 2, ...)."),
+    _int("ReleaseFrame", "Release Frame", "SetReleaseFrame", 0, "Index of the frame at which the integration starts (0 = first time step)."),
+    _double("TimeStep", "Time Step", "SetTimeStep", 0.01, "Integration time step (time units of the data).", TIMED),
+    _double("IntegrationTime", "Integration Time", "SetIntegrationTime", 1.0, "Total integration time; longer than the period of the sequence wraps around (periodic flow).", TIMED),
     _enum("Direction", "Direction", "SetDirection", 0, "Forward or backward integration in time.", [(0, "forward"), (1, "backward")], TIMED),
     _enum("Integrator", "Integrator", "SetIntegrator", 0, "Explicit Euler (as in the papers) or RK4.", [(0, "Euler"), (1, "RK4")], "1 2 3 4 5 6 7 9 10"),
-    _int("NumberOfSnapshots", "Snapshots", "SetNumberOfSnapshots", 10, "Number of snapshots of the tracer positions (or of the fixed points in time) provided on the time dependent output port 'Tracers'.", "1 2 5 6 7 8 9 10"),
-    _bool("ReleaseAtCentroids", "Also release at triangle centroids", "SetReleaseAtCentroids", 0, "Release tracers at the triangle centroids in addition to the vertices.", "1 2 5 6 7 9"),
-    _bool("TrajectoryLines", "Tracer paths (polylines on 'Lines')", "SetTrajectoryLines", 0, "Record the tracer positions at the snapshot times and output the paths as polylines.", TRACERS),
-    _int("NumberOfReleases", "Number of releases", "SetNumberOfReleases", 1, "Staggered release: number of releases of all tracers.", "5"),
-    _double("TimeBetweenReleases", "Time between releases", "SetTimeBetweenReleases", 0.03, "Staggered release: time between two releases.", "5"),
-    _double("DiffusionCoefficient", "Diffusion coefficient", "SetDiffusionCoefficient", 5e-5, "Wall-normal random walk: y += N(0, sqrt(2 D dt)).", "6 9"),
-    _double("MaxWallNormalDistance", "Max. wall-normal distance", "SetMaxWallNormalDistance", 0.06, "Tracers farther from the wall leave the near-wall region.", "6 7 9"),
-    _double("Viscosity", "Viscosity mu", "SetViscosity", 0.04, "delta_n = WSS scale x mu is the initial distance of the tracers from the wall.", "6 7 9"),
-    _int("RandomSeed", "Random seed (0 = random)", "SetRandomSeed", 0, "Seed of the random walk.", "6 9"),
-    _double("ReleasePoint", "Release point (x, y, z)", "SetReleasePoint", "0 0 0", "Coordinates of the single tracer release point (snapped to the closest surface point).", "3", nelem=3),
-    _int("ReleaseVertex", "Release vertex index", "SetReleaseVertex", 0, "Vertex at which the single tracer is released.", "4"),
-    _bool("IgnoreBoundaryTriangles", "Ignore boundary triangles", "SetIgnoreBoundaryTriangles", 1, "Do not report fixed points in triangles touching the boundary of the surface.", "8 11 12"),
-    _double("ZeroTolerance", "Zero vector tolerance", "SetZeroTolerance", 1e-10, "Vectors shorter than this are treated as zero when locating fixed points.", "8 11 12"),
-    _double("ManifoldStep", "Manifold step / sqrt(area)", "SetManifoldStep", 0.2, "Arc-length step of the manifold integration relative to the local triangle size.", "12"),
-    _int("ManifoldMaxSteps", "Manifold max. steps", "SetManifoldMaxSteps", 20000, "Maximum number of steps per manifold branch.", "12"),
-    _double("ManifoldMaxLength", "Manifold max. length (0 = auto)", "SetManifoldMaxLength", 0.0, "Maximum length of a manifold branch (0: 25 times the bounding radius).", "12"),
-    _double("ManifoldPerturbation", "Perturbation / sqrt(area)", "SetManifoldPerturbation", 0.1, "Distance from the saddle at which the manifold integration starts.", "12"),
-    _double("CaptureRadius", "Capture radius / sqrt(area)", "SetCaptureRadius", 0.5, "A manifold stops when it comes this close to another fixed point.", "12"),
-    _int("MaxCrossings", "Max. triangle crossings per step", "SetMaxCrossings", 50, "Maximum number of triangle crossings of a tracer within one time step.", advanced=True),
-    """<StringVectorProperty name="OutputDirectory" command="SetOutputDirectory" number_of_elements="1" default_values="" panel_visibility="advanced">
+    _int("NumberOfSnapshots", "Number Of Snapshots", "SetNumberOfSnapshots", 10, "Number of snapshots of the tracer positions (or of the fixed points in time) provided on the time dependent output port 'Tracers'.", "1 2 5 6 7 8 9 10"),
+    _bool("ReleaseAtCentroids", "Release At Centroids", "SetReleaseAtCentroids", 0, "Release tracers at the triangle centroids in addition to the vertices.", "1 2 5 6 7 9"),
+    _bool("TrajectoryLines", "Trajectory Lines", "SetTrajectoryLines", 0, "Record the tracer positions at the snapshot times and output the paths as polylines on the 'Lines' port.", TRACERS),
+    _int("NumberOfReleases", "Number Of Releases", "SetNumberOfReleases", 1, "Staggered release: number of releases of all tracers.", "5"),
+    _double("TimeBetweenReleases", "Time Between Releases", "SetTimeBetweenReleases", 0.03, "Staggered release: time between two releases.", "5"),
+    _double("DiffusionCoefficient", "Diffusion Coefficient", "SetDiffusionCoefficient", 5e-5, "Wall-normal random walk: y += N(0, sqrt(2 D dt)).", "6 9"),
+    _double("MaxWallNormalDistance", "Max Wall Normal Distance", "SetMaxWallNormalDistance", 0.06, "Tracers farther from the wall leave the near-wall region.", "6 7 9"),
+    _double("Viscosity", "Viscosity", "SetViscosity", 0.04, "Dynamic viscosity mu: delta_n = WSS scale x mu is the initial distance of the tracers from the wall.", "6 7 9"),
+    _int("RandomSeed", "Random Seed", "SetRandomSeed", 0, "Seed of the random walk (0 = random).", "6 9"),
+    _double("ReleasePoint", "Release Point", "SetReleasePoint", "0 0 0", "Coordinates of the single tracer release point (snapped to the closest surface point).", "3", nelem=3),
+    _int("ReleaseVertex", "Release Vertex", "SetReleaseVertex", 0, "Index of the vertex at which the single tracer is released.", "4"),
+    _bool("IgnoreBoundaryTriangles", "Ignore Boundary Triangles", "SetIgnoreBoundaryTriangles", 1, "Do not report fixed points in triangles touching the boundary of the surface.", "8 11 12"),
+    _double("ZeroTolerance", "Zero Tolerance", "SetZeroTolerance", 1e-10, "Vectors shorter than this are treated as zero (fixed point detection; normalized WSS of the metrics).", "8 11 12 13"),
+    _double("ManifoldStep", "Manifold Step", "SetManifoldStep", 0.2, "Arc-length step of the manifold integration relative to the local triangle size (sqrt of the area).", "12"),
+    _int("ManifoldMaxSteps", "Manifold Max Steps", "SetManifoldMaxSteps", 20000, "Maximum number of steps per manifold branch.", "12"),
+    _double("ManifoldMaxLength", "Manifold Max Length", "SetManifoldMaxLength", 0.0, "Maximum length of a manifold branch (0: 25 times the bounding radius).", "12"),
+    _double("ManifoldPerturbation", "Manifold Perturbation", "SetManifoldPerturbation", 0.1, "Distance from the saddle at which the manifold integration starts, relative to sqrt(area).", "12"),
+    _double("CaptureRadius", "Capture Radius", "SetCaptureRadius", 0.5, "A manifold stops when it comes this close (relative to sqrt(area)) to another fixed point.", "12"),
+    _double("MeshLengthUnit", "Mesh Length Unit", "SetMeshLengthUnit", 1.0, "Size of one mesh length unit in metres: 1 reports the divergences and TSVI per mesh unit, 0.001 (mesh in mm) per metre.", "13"),
+    _int("MaxCrossings", "Max Crossings", "SetMaxCrossings", 50, "Maximum number of triangle crossings of a tracer within one time step.", advanced=True),
+    """<StringVectorProperty name="OutputDirectory" label="Output Directory" command="SetOutputDirectory" number_of_elements="1" default_values="" panel_visibility="advanced">
   <FileListDomain name="files" />
   <Hints><UseDirectoryName /></Hints>
-  <Documentation>Write VTK files to folder (optional): also write the result files of the command-line program (RT, ET, tracer snapshots + .pvd, fixed points, manifolds, SingET, WSSmetrics, ...) into this folder.</Documentation>
+  <Documentation>Optional: also write the result files of the command-line program (RT, ET, tracer snapshots + .pvd, fixed points, manifolds, SingET, WSSmetrics, ...) into this folder.</Documentation>
 </StringVectorProperty>""",
-    _prop("StringVectorProperty", "OutputPrefix", "File prefix", "SetOutputPrefix", "wsslcs", "Prefix of the files written to the folder above.", advanced=True),
-    """<PropertyGroup label="Data"><Property name="SelectInputVectors" /><Property name="WSSScale" /><Property name="UseAllTimeSteps" /><Property name="TimeBetweenFrames" /><Property name="ReleaseFrame" /></PropertyGroup>
+    _prop("StringVectorProperty", "OutputPrefix", "Output Prefix", "SetOutputPrefix", "wsslcs", "Prefix of the files written to the output directory.", advanced=True),
+    """<PropertyGroup label="Data"><Property name="WSSVectors" /><Property name="WSSScale" /><Property name="UseAllTimeSteps" /><Property name="TimeBetweenFrames" /><Property name="ReleaseFrame" /><Property name="MeshLengthUnit" /></PropertyGroup>
 <PropertyGroup label="Integration"><Property name="TimeStep" /><Property name="IntegrationTime" /><Property name="Direction" /><Property name="Integrator" /><Property name="NumberOfSnapshots" /><Property name="ReleaseAtCentroids" /><Property name="TrajectoryLines" /><Property name="NumberOfReleases" /><Property name="TimeBetweenReleases" /><Property name="DiffusionCoefficient" /><Property name="MaxWallNormalDistance" /><Property name="Viscosity" /><Property name="RandomSeed" /><Property name="ReleasePoint" /><Property name="ReleaseVertex" /><Property name="MaxCrossings" /></PropertyGroup>
 <PropertyGroup label="Fixed points and manifolds"><Property name="IgnoreBoundaryTriangles" /><Property name="ZeroTolerance" /><Property name="ManifoldStep" /><Property name="ManifoldMaxSteps" /><Property name="ManifoldMaxLength" /><Property name="ManifoldPerturbation" /><Property name="CaptureRadius" /></PropertyGroup>
 <PropertyGroup label="Files"><Property name="OutputDirectory" /><Property name="OutputPrefix" /></PropertyGroup>""",
@@ -245,6 +251,7 @@ class WSSLCSSurfaceTransport(VTKPythonAlgorithmBase):
         self._m_pert = 0.1
         self._capture = 0.5
         self._max_cross = 50
+        self._length_unit = 1.0
         self._outdir = ""
         self._prefix = "wsslcs"
         # pipeline state
@@ -287,6 +294,7 @@ class WSSLCSSurfaceTransport(VTKPythonAlgorithmBase):
     def SetManifoldPerturbation(self, v): self._set("_m_pert", float(v))
     def SetCaptureRadius(self, v): self._set("_capture", float(v))
     def SetMaxCrossings(self, v): self._set("_max_cross", int(v))
+    def SetMeshLengthUnit(self, v): self._set("_length_unit", float(v))
     def SetOutputDirectory(self, v): self._set("_outdir", str(v or ""))
     def SetOutputPrefix(self, v): self._set("_prefix", str(v or "wsslcs"))
 
@@ -345,7 +353,7 @@ class WSSLCSSurfaceTransport(VTKPythonAlgorithmBase):
                 self._integrator, self._nout, self._highres, self._lines, self._num_stag, self._stag_delta, self._diff,
                 self._max_yn, self._mu, self._seed, tuple(self._pt), self._vertex, self._exclude_boundary, self._zero_tol,
                 self._m_step, self._m_max_steps, self._m_max_length, self._m_pert, self._capture, self._max_cross,
-                self._outdir, self._prefix)
+                self._length_unit, self._outdir, self._prefix)
 
     def _parameters(self, steady, n_frames, dt):
         p = Parameters(infile="paraview-input", vector_array=self._array_name or "wss", output_prefix=self._prefix,
@@ -362,7 +370,7 @@ class WSSLCSSurfaceTransport(VTKPythonAlgorithmBase):
                        manifold_step_fraction=self._m_step, manifold_max_steps=self._m_max_steps,
                        manifold_max_length=self._m_max_length, manifold_perturbation=self._m_pert,
                        fixed_point_capture_radius=self._capture, write_trajectory_lines=self._lines,
-                       max_crossings_per_step=self._max_cross, verbose=0)
+                       max_crossings_per_step=self._max_cross, mesh_length_unit=self._length_unit, verbose=0)
         p.validate()
         return p
 

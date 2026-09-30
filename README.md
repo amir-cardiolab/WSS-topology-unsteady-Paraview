@@ -32,8 +32,7 @@ paraview.org include Python and numpy; tested with ParaView 5.11.1 on macOS).
    each other.
 2. In ParaView: *Tools › Manage Plugins › Load New…*, select
    `WSSLCSPlugin.py`. Tick *Auto Load* to load it at every start.
-3. After you load your WSS time series right click on the file, select add filter, and select WSSLCS --> WSS surface transport filter. Under analysis, you can select the option you are interested in (currently, not all tested but the main unsteady features WSS exposure time and surface tracers should work.
-4. With a remote `pvserver`, load the plugin on the server (the files must
+3. With a remote `pvserver`, load the plugin on the server (the files must
    be on the server machine) and on the client.
 
 Batch use (`pvpython`, `pvbatch`):
@@ -43,7 +42,7 @@ from paraview.simple import *
 LoadPlugin("/path/to/WSSLCSPlugin.py", remote=True, ns=globals())
 reader = LegacyVTKReader(FileNames=[...frames of one period...])
 f = WSSSurfaceTransport(Input=reader)
-f.SelectInputVectors = ["POINTS", "wss"]
+f.WSSVectors = ["POINTS", "wss"]
 f.WSSScale = 0.03
 f.TimeBetweenFrames = 0.1
 f.Analysis = "Surface tracers: residence time + WSS exposure time"
@@ -84,7 +83,7 @@ SaveData("tracers.pvd", proxy=OutputPort(f, 3), WriteTimeSteps=1)  # snapshots
 
    | port | content |
    |---|---|
-   | 0 Surface | the input surface with its arrays plus the results: `wss_magnitude`, `divergence`; `RT` (residence time of the tracer released at each vertex), `status`, `y_normal`; `ET`, `ET_norm`, `WSSET` (cells) with `WSSET_point`, `ET_point`; `SingET`, `SingET_norm`, `SingET_nodal`, `SingET_nodal_eig`; `TAWSS`, `TAWSS_vector`, `OSI`, `RRT`, `WSSdiv`, `TSVI`, …; `poincare_index` |
+   | 0 Surface | the input surface with its arrays plus the results: `wss_magnitude`, `divergence`; `RT` (residence time of the tracer released at each vertex), `status`, `y_normal`; `ET`, `ET_norm`, `WSSET` (cells) with `WSSET_point`, `ET_point`; `SingET`, `SingET_norm`, `SingET_nodal`, `SingET_nodal_eig`; `TAWSS`, `TAWSS_vector`, `OSI`, `RRT`, `WSSdiv_TA`, `NormWSSdiv_TA`, `TSVI`, `TSVI_valid`, …; `poincare_index` |
    | 1 Fixed points | vertices with `type` (1 source, 2 sink, 3 saddle, 4 center, 6 attracting focus, 7 repelling focus), `poincare_index`, `triangle`, eigenvalues and eigenvectors |
    | 2 Lines | stable / unstable manifolds (`manifold` 0 unstable, 1 stable; `saddle`, `branch`, `length`, `arclength`, `speed`), the tracer paths (with *Tracer Paths*), or the single trajectory (`time`, `wss_magnitude`, `triangle`) |
    | 3 Tracers | time dependent: the tracer positions at the snapshot times (`particle_id`, `RT`, `status`, `tracer_tag`, `y_normal`), the fixed points in time (analysis 8), or the position of the single tracer; use the animation controls (the snapshot times are added to the time keeper and expressed in the time axis of the input: release time plus elapsed time, converted with *Time Between Frames* when the file series has no time information, so that the tracers animate in step with the WSS frames) |
@@ -108,7 +107,7 @@ SaveData("tracers.pvd", proxy=OutputPort(f, 3), WriteTimeSteps=1)  # snapshots
 | Tagged tracers (10) | + the *Seeds* input |
 | Single tracer (3, 4) | *Release Point* (snapped to the surface) or *Release Vertex Index* |
 | Fixed points tracked in time (8) | *Time Step*, *Integration Time*, *Number Of Snapshots*, fixed point options |
-| Time-series metrics (13) | none (uses all time steps) |
+| Time-series metrics (13) | *Mesh Length Unit* (size of one mesh unit in metres: 1 reports the divergences and TSVI per mesh unit, 0.001 for a mesh in mm gives 1/m), *Zero Tolerance* |
 
 *Max Triangle Crossings Per Step* (advanced) limits the number of triangles
 a tracer may cross within one time step.
@@ -132,8 +131,15 @@ data the field is interpolated linearly in time between the frames of the
 period and continued periodically; the fixed points of the interpolated
 field are tracked at every time step [2]. The time-series metrics are
 `TAWSS = (1/T)∫|τ|dt`, `OSI = ½(1 − |∫τdt|/∫|τ|dt)`, `RRT = 1/|(1/T)∫τdt|`,
-`WSSdiv = (1/T)∫∇·τ dt` and `TSVI = [(1/T)∫(DIV_W − ⟨DIV_W⟩)²dt]^½` with
-`DIV_W = ∇·(τ/|τ|)` (Mazzi et al. 2020).
+`WSSdiv_TA = (1/T)∫∇·τ dt`, `NormWSSdiv_TA = (1/T)∫DIV_W dt` with `DIV_W = ∇·(τ/|τ|)`
+the divergence of the normalized WSS vector field, and
+`TSVI = [(1/T)∫(DIV_W − NormWSSdiv_TA)²dt]^½`, the root mean square deviation of
+`DIV_W` from its cycle average (Mazzi et al. 2020). The discrete surface
+divergence is first-order accurate (checked against the analytic divergence
+of unit fields on a sphere); the divergences and TSVI are per mesh length
+unit, or per metre with *Mesh Length Unit*; triangles touching a vertex with a
+zero WSS (caps), where the normalized vector is undefined, are flagged in
+`TSVI_valid` and set to 0.
 
 ## Files
 

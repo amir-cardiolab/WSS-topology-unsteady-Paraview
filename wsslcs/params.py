@@ -23,7 +23,8 @@ The meaning of ``flag_code`` follows the original program::
     11 : fixed points of the (time averaged) WSS vector field          (new)
     12 : fixed points + stable/unstable manifolds, i.e. WSS LCS         (new)
     13 : time-series WSS metrics: TAWSS, OSI, RRT, time-averaged WSS
-         divergence and TSVI                                             (new)
+         divergence (WSSdiv_TA), time-averaged divergence of the
+         normalized WSS (NormWSSdiv_TA) and TSVI                          (new)
 
 Unsteady data (Steady_flag = 0) is assumed periodic: when the integration time
 exceeds the time spanned by the files, the frame after the last file is the
@@ -51,7 +52,7 @@ FLAG_CODES: Dict[int, str] = {
     10: "Like 1 but the tracers carry integer tags read from infile_tag",
     11: "Fixed points of the (time averaged) WSS vector field",
     12: "Fixed points and stable/unstable manifolds (WSS LCS)",
-    13: "Time-series WSS metrics: TAWSS, OSI, RRT, time-averaged WSS divergence, TSVI",
+    13: "Time-series WSS metrics: TAWSS, OSI, RRT, time-averaged WSS divergence, time-averaged normalized WSS divergence, TSVI",
 }
 
 ADVECTION_CODES = (1, 2, 5, 6, 7, 9, 10)
@@ -95,6 +96,7 @@ class Parameters:
     mu: float = 0.04                     # dynamic viscosity (g/cm/s), used by flag_code 6, 7, 9
     exclude_boundary_fixed_points: int = 1
     zero_vector_tolerance: float = 1.0e-10
+    mesh_length_unit: float = 1.0        # size of one mesh length unit in metres (flag 13: divergences per metre)
     manifold_step_fraction: float = 0.2      # arc-length step / sqrt(local triangle area)
     manifold_max_steps: int = 20000
     manifold_max_length: float = 0.0         # 0 -> automatic (25 x bounding radius)
@@ -154,6 +156,8 @@ class Parameters:
             raise ValueError("'infile' must be given in the parameter file")
         if self.time_step <= 0:
             raise ValueError("time_step must be positive")
+        if self.mesh_length_unit <= 0:
+            raise ValueError("mesh_length_unit must be positive")
         if self.output_format.lower().lstrip(".") not in ("vtp", "vtk"):
             raise ValueError("output_format must be 'vtp' or 'vtk'")
         self.output_format = self.output_format.lower().lstrip(".")
@@ -348,6 +352,9 @@ integrator = euler
 # fixed point / manifold settings (flag_code 8, 11, 12)
 exclude_boundary_fixed_points = 1
 zero_vector_tolerance = 1e-10
+# flag 13: size of one mesh length unit in metres (0.001 for a mesh in mm); the
+# divergences and TSVI are then reported per metre (1: per mesh length unit)
+mesh_length_unit = 1.0
 manifold_step_fraction = 0.2
 manifold_max_steps = 20000
 manifold_max_length = 0

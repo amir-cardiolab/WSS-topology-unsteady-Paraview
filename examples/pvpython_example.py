@@ -24,7 +24,7 @@ reader = LegacyVTKReader(FileNames=frames)          # 8 time steps = the frames 
 
 # ---- surface tracers, residence time and WSS exposure time -------------------------------
 tracers = WSSSurfaceTransport(Input=reader)          # noqa: F821  (created by LoadPlugin)
-tracers.SelectInputVectors = ["POINTS", "wss"]
+tracers.WSSVectors = ["POINTS", "wss"]
 tracers.WSSScale = 0.03
 tracers.TimeBetweenFrames = 0.1                      # period = 8 x 0.1
 tracers.ReleaseFrame = 0
@@ -42,7 +42,7 @@ print("tracers:", {k: summary[k] for k in ("n_tracers", "n_steps", "integration_
 
 # ---- fixed points and manifolds of the time averaged WSS field ----------------------------
 topo = WSSSurfaceTransport(Input=reader)             # noqa: F821
-topo.SelectInputVectors = ["POINTS", "wss"]
+topo.WSSVectors = ["POINTS", "wss"]
 topo.WSSScale = 0.03
 topo.TimeBetweenFrames = 0.1
 topo.Analysis = "Fixed points + stable/unstable manifolds (WSS LCS)"

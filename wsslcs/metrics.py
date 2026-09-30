@@ -2,20 +2,31 @@
 Time-series (Eulerian) WSS metrics computed over one period of an unsteady
 WSS data set (flag_code 13):
 
-* TAWSS          time-averaged WSS magnitude            (1/T) int |tau| dt
-* TAWSS_vector   time-averaged WSS vector               (1/T) int  tau  dt
-* OSI            oscillatory shear index                0.5 (1 - |int tau dt| / int |tau| dt)
-* RRT            relative residence time                1 / |(1/T) int tau dt|   (= 1 / ((1 - 2 OSI) TAWSS))
-* WSSdiv         time-averaged WSS divergence           (1/T) int  div(tau) dt         (Eq. 3 of the WSSET paper)
-* DIVW_mean      time-averaged divergence of the unit WSS field   DIV_W = div(tau / |tau|)
-* TSVI           topological shear variation index      [ (1/T) int (DIV_W - mean DIV_W)^2 dt ]^(1/2)
-                 (Mazzi et al., Biomech. Model. Mechanobiol. 2020)
+* TAWSS            time-averaged WSS magnitude                  (1/T) int |tau| dt
+* TAWSS_vector     time-averaged WSS vector                     (1/T) int  tau  dt
+* OSI              oscillatory shear index                      0.5 (1 - |int tau dt| / int |tau| dt)
+* RRT              relative residence time                      1 / |(1/T) int tau dt|  (= 1 / ((1 - 2 OSI) TAWSS))
+* WSSdiv_TA        time-averaged WSS divergence                 (1/T) int  div(tau) dt          (Eq. 3 of the WSSET paper)
+* NormWSSdiv_TA    time-averaged divergence of the NORMALIZED WSS vector field
+                   DIV_W = div(tau / |tau|):                    (1/T) int DIV_W dt  (= the cycle average of DIV_W)
+* TSVI             topological shear variation index: the root mean square deviation of
+                   DIV_W from its cycle average                 [ (1/T) int (DIV_W - NormWSSdiv_TA)^2 dt ]^(1/2)
+                   (Mazzi et al., Biomech. Model. Mechanobiol. 19, 2020)
+* TSVI_valid       1 for the triangles whose three vertices carry a non-zero WSS in every
+                   frame; where a vertex has a zero WSS (caps, inlets) the normalized vector
+                   is undefined and NormWSSdiv_TA / TSVI are set to 0 (flag 0).
 
-The divergences are surface divergences of the piecewise-linear field in
-every triangle (cell values) and are also averaged to the points (area
-weighted).  The frames of one period are equally spaced, so the time
+The divergences are surface divergences of the piecewise-linear field in every
+triangle (cell values, first-order accurate: checked against the analytic
+divergence of unit fields on a sphere) and are also averaged to the points
+(area weighted).  The frames of one period are equally spaced, so the time
 integrals are arithmetic means over the frames.  With steady (single file)
 data the metrics degenerate (OSI = TSVI = 0).
+
+Units: TAWSS and RRT are in the units of the files; the divergences and TSVI
+are per mesh length unit (1/cm for a mesh in cm), or per metre when the
+parameter ``mesh_length_unit`` gives the size of one mesh unit in metres
+(0.001 for a mesh in mm; the literature reports TSVI in 1/m).
 """
 from __future__ import annotations
 
@@ -32,9 +43,12 @@ from .tracer import RunCancelled
 
 
 def compute_metrics(seq: FieldSequence, progress=None, verbose: bool = False) -> Dict[str, Tuple[np.ndarray, str]]:
-    """name -> (values, 'point' | 'cell'); the WSS is expressed in the units of the files."""
+    """name -> (values, 'point' | 'cell')."""
     mesh = seq.mesh
-    scale = float(seq.p.WSS_SCALE) or 1.0
+    p = seq.p
+    scale = float(p.WSS_SCALE) or 1.0
+    unit_factor = 1.0 / (float(getattr(p, "mesh_length_unit", 1.0)) or 1.0)   # 1/mesh unit -> 1/m
+    zero_tol = float(getattr(p, "zero_vector_tolerance", 1e-10))
     idxs = [seq.index_first] if seq.steady else seq.frame_list()
     n = len(idxs)
     sum_vec = np.zeros((mesh.n_points, 3))
@@ -42,6 +56,7 @@ def compute_metrics(seq: FieldSequence, progress=None, verbose: bool = False) ->
     sum_div = np.zeros(mesh.n_tris)
     sum_divw = np.zeros(mesh.n_tris)
     sum_divw2 = np.zeros(mesh.n_tris)
+    valid = np.ones(mesh.n_tris, dtype=bool)
     for k, idx in enumerate(idxs):
         if progress is not None and progress(k / n, f"frame {k + 1} of {n} (file index {idx})") is False:
             raise RunCancelled("cancelled")
@@ -51,9 +66,10 @@ def compute_metrics(seq: FieldSequence, progress=None, verbose: bool = False) ->
         sum_vec += tau
         sum_mag += mag
         sum_div += f.divergence() / scale
-        unit = np.divide(tau, mag[:, None], out=np.zeros_like(tau), where=mag[:, None] > 0)
-        fu = SurfaceVectorField(mesh, unit, scale=1.0, name="unit")
-        divw = fu.divergence()
+        zero = mag <= max(zero_tol, 1e-12 * float(mag.max()))
+        valid &= ~np.any(zero[mesh.triangles], axis=1)
+        unit = np.divide(tau, mag[:, None], out=np.zeros_like(tau), where=~zero[:, None])
+        divw = SurfaceVectorField(mesh, unit, scale=1.0, name="unit").divergence()
         sum_divw += divw
         sum_divw2 += divw ** 2
         if verbose:
@@ -65,21 +81,25 @@ def compute_metrics(seq: FieldSequence, progress=None, verbose: bool = False) ->
     osi = np.clip(osi, 0.0, 0.5)
     floor = 1e-12 * max(float(tawss.max()), 1e-300)
     rrt = 1.0 / np.maximum(mean_vec_mag, floor)
-    wssdiv = sum_div / n
+    wssdiv = sum_div / n * unit_factor
     divw_mean = sum_divw / n
-    tsvi = np.sqrt(np.maximum(sum_divw2 / n - divw_mean ** 2, 0.0))
+    tsvi = np.sqrt(np.maximum(sum_divw2 / n - divw_mean ** 2, 0.0)) * unit_factor
+    divw_mean = divw_mean * unit_factor
+    divw_mean[~valid] = 0.0
+    tsvi[~valid] = 0.0
     out: Dict[str, Tuple[np.ndarray, str]] = {
         "TAWSS": (tawss, "point"),
         "TAWSS_vector": (mean_vec, "point"),
         "TAWSS_vector_magnitude": (mean_vec_mag, "point"),
         "OSI": (osi, "point"),
         "RRT": (rrt, "point"),
-        "WSSdiv": (wssdiv, "cell"),
-        "WSSdiv_point": (mesh.cell_to_point(wssdiv), "point"),
-        "DIVW_mean": (divw_mean, "cell"),
-        "DIVW_mean_point": (mesh.cell_to_point(divw_mean), "point"),
+        "WSSdiv_TA": (wssdiv, "cell"),
+        "WSSdiv_TA_point": (mesh.cell_to_point(wssdiv), "point"),
+        "NormWSSdiv_TA": (divw_mean, "cell"),
+        "NormWSSdiv_TA_point": (mesh.cell_to_point(divw_mean), "point"),
         "TSVI": (tsvi, "cell"),
         "TSVI_point": (mesh.cell_to_point(tsvi), "point"),
+        "TSVI_valid": (valid.astype(np.int32), "cell"),
     }
     if progress is not None:
         progress(1.0, "metrics computed")
@@ -94,21 +114,27 @@ def run_metrics(params: Parameters, mesh: SurfaceMesh, seq: FieldSequence, verbo
     metrics = compute_metrics(seq, progress, verbose)
     n_frames = 1 if seq.steady else seq.n_frames
     period = 0.0 if seq.steady else seq.period
+    unit = float(getattr(params, "mesh_length_unit", 1.0)) or 1.0
     files = {}
     if write_files:
         point_arrays = {k: v for k, (v, loc) in metrics.items() if loc == "point"}
         cell_arrays = {k: v for k, (v, loc) in metrics.items() if loc == "cell"}
-        pd = mesh.to_polydata(point_arrays, cell_arrays, {"n_frames": np.array([n_frames]), "period": np.array([period])})
+        pd = mesh.to_polydata(point_arrays, cell_arrays, {"n_frames": np.array([n_frames]), "period": np.array([period]),
+                                                          "mesh_length_unit": np.array([unit])})
         files["WSSmetrics"] = io_vtk.write_polydata(pd, params.output_path("WSSmetrics"))
+    n_invalid = int(np.count_nonzero(metrics["TSVI_valid"][0] == 0))
     summary = {"n_frames": n_frames, "period": period, "files": files, "wall_time_s": _time.time() - t0,
                "TAWSS_mean": float(metrics["TAWSS"][0].mean()), "OSI_mean": float(metrics["OSI"][0].mean()),
                "OSI_max": float(metrics["OSI"][0].max()), "TSVI_max": float(metrics["TSVI"][0].max()),
-               "WSSdiv_range": [float(metrics["WSSdiv"][0].min()), float(metrics["WSSdiv"][0].max())],
+               "WSSdiv_TA_range": [float(metrics["WSSdiv_TA"][0].min()), float(metrics["WSSdiv_TA"][0].max())],
+               "NormWSSdiv_TA_range": [float(metrics["NormWSSdiv_TA"][0].min()), float(metrics["NormWSSdiv_TA"][0].max())],
+               "n_invalid_triangles": n_invalid, "divergence_unit": "1/m" if unit != 1.0 else "1/(mesh length unit)",
                "data": {"metrics": metrics}}
     if verbose:
         print(f"  {n_frames} frames, period {period:g}: TAWSS mean {summary['TAWSS_mean']:.4g}, OSI mean {summary['OSI_mean']:.4g} "
               f"(max {summary['OSI_max']:.3g}), TSVI max {summary['TSVI_max']:.4g}, "
-              f"WSSdiv {summary['WSSdiv_range'][0]:.4g} .. {summary['WSSdiv_range'][1]:.4g}")
+              f"WSSdiv_TA {summary['WSSdiv_TA_range'][0]:.4g} .. {summary['WSSdiv_TA_range'][1]:.4g} [{summary['divergence_unit']}]"
+              + (f"; {n_invalid} triangles with a zero WSS vertex excluded from NormWSSdiv_TA / TSVI" if n_invalid else ""))
         if files:
             print(f"  written {files['WSSmetrics']}")
     return summary
