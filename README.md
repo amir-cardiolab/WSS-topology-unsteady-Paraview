@@ -207,5 +207,4 @@ in cardiovascular flows*, Biomechanics and Modeling in Mechanobiology, 19,
 1403–1423, 2020.
 
 Related: the browser apps https://github.com/amir-cardiolab/WSS-topology
-(fixed points and manifolds) and https://github.com/amir-cardiolab/WSS_surface_transport
-(the complete software in the browser).
+(fixed points and manifolds).
